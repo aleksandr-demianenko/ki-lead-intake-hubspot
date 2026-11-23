@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Arbeitsprobe: Inbound-Anfragen werden mit n8n und Claude qualifiziert, in HubSpot angelegt und an das zuständige Vertriebsteam gemeldet.">
+<style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>KI-Lead-Intake für HubSpot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~44rem) with figures breaking out to ~66rem; the process reads top to bottom like a lead's path through the system. */
+:root {
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --ink: #18211e;
+  --muted: #56635e;
+  --line: #d6ddd9;
+  --accent: #0d6b57;
+  --accent-soft: #dcefe8;
+  --warn: #9a5a00;
+  --warn-soft: #f6ead6;
+  --drop: #8a3a3a;
+  --drop-soft: #f3e1e1;
+  --font-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111715; --surface: #18201d; --ink: #e6ece9; --muted: #9aa9a3; --line: #2c3833;
+    --accent: #5cc6a8; --accent-soft: #1b3a31; --warn: #e0a95a; --warn-soft: #3a2e1a;
+    --drop: #e08f8f; --drop-soft: #3a2222; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111715; --surface: #18201d; --ink: #e6ece9; --muted: #9aa9a3; --line: #2c3833;
+  --accent: #5cc6a8; --accent-soft: #1b3a31; --warn: #e0a95a; --warn-soft: #3a2e1a;
+  --drop: #e08f8f; --drop-soft: #3a2222; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 1.0625rem; line-height: 1.6;
+  padding-inline: 16px; padding-block: 0 4rem;
+}
+.page { max-width: 66rem; margin-inline: auto; display: grid; gap: 4rem; }
+.col { max-width: 44rem; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.1; margin: 0; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 800; font-stretch: 80%; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.5rem, 3.2vw, 2rem); font-weight: 700; font-stretch: 85%; }
+h3 { font-size: 1.1rem; font-weight: 700; }
+p { margin: 0; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
+code { background: var(--accent-soft); color: var(--ink); padding: 0.05em 0.35em; border-radius: 4px; }
+section { display: grid; gap: 1.25rem; }
+.lede { font-size: 1.25rem; line-height: 1.5; }
+.muted { color: var(--muted); }
+
+/* Header */
+header { padding-top: 3.5rem; display: grid; gap: 1.25rem; border-bottom: 1px solid var(--line); padding-bottom: 2.5rem; }
+.stack { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.chip { font-family: var(--font-mono); font-size: 0.8rem; border: 1px solid var(--line); background: var(--surface); padding: 0.25rem 0.6rem; border-radius: 999px; }
+.meta { font-size: 0.95rem; color: var(--muted); }
+
+/* Key facts */
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.fact { background: var(--surface); padding: 1rem 1.1rem; display: grid; gap: 0.25rem; min-width: 0; }
+.fact b { font-family: var(--font-display); font-stretch: 85%; font-size: 1.15rem; }
+.fact span { font-size: 0.95rem; color: var(--muted); }
+
+/* Process */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: step; }
+.steps li { counter-increment: step; display: grid; grid-template-columns: 2.5rem 1fr; gap: 0.75rem; padding-block: 0.85rem; border-top: 1px solid var(--line); }
+.steps li:last-child { border-bottom: 1px solid var(--line); }
+.steps li::before { content: counter(step, decimal-leading-zero); font-family: var(--font-mono); color: var(--accent); font-size: 0.9rem; padding-top: 0.15rem; }
+.steps li > div { min-width: 0; display: grid; gap: 0.15rem; }
+.steps .tool { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+
+/* Figures */
+figure { margin: 0; display: grid; gap: 0.6rem; }
+figure a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+figure a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+figure img { display: block; width: 100%; height: auto; max-width: 100%; }
+figcaption { font-size: 0.95rem; color: var(--muted); max-width: 44rem; }
+figcaption b { color: var(--ink); font-weight: 600; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: 1.5rem; align-items: start; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 36rem; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 0.78rem; padding: 0.05rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+.pill.a { background: var(--accent); color: var(--bg); }
+.pill.b { background: var(--accent-soft); color: var(--ink); }
+.pill.c { background: var(--drop-soft); color: var(--drop); }
+.pill.drop { background: var(--drop-soft); color: var(--drop); }
+
+/* Segment scale */
+.scale { display: grid; grid-template-columns: 1fr 1.6fr 1.2fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.band { padding: 0.9rem 1rem; display: grid; gap: 0.6rem; align-content: start; min-width: 0; }
+.band + .band { border-left: 1px solid var(--line); }
+.band h3 { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 500; }
+.band .range { font-size: 0.85rem; color: var(--muted); }
+.lead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 0.5rem; font-size: 0.9rem; border-top: 1px dashed var(--line); padding-top: 0.45rem; }
+.lead .mono { font-variant-numeric: tabular-nums; }
+.route { font-size: 0.8rem; color: var(--accent); font-family: var(--font-mono); }
+@media (max-width: 40rem) {
+  .scale { grid-template-columns: 1fr; }
+  .band + .band { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+/* Findings */
+.findings { display: grid; gap: 1rem; }
+.finding { display: grid; gap: 0.35rem; padding: 1rem 1.1rem; background: var(--warn-soft); border-radius: 6px; }
+.finding h3 { color: var(--warn); }
+.finding p { font-size: 0.98rem; }
+
+/* Principles */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1.5rem 2rem; }
+.grid2 > div { display: grid; gap: 0.35rem; align-content: start; min-width: 0; }
+ul.plain { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; }
+
+footer { border-top: 1px solid var(--line); padding-top: 1.5rem; font-size: 0.95rem; color: var(--muted); display: grid; gap: 0.35rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+</head>
+<body>
+<div class="page">
+
+<header>
+  <p class="eyebrow">Arbeitsprobe · November 2026</p>
+  <h1>KI-Lead-Intake für HubSpot</h1>
+  <p class="lede col">Eine Anfrage aus dem Webformular ist nach wenigen Sekunden qualifiziert im CRM. Claude liest die Nachricht, n8n prüft die Regeln und verteilt den Lead, HubSpot speichert alles am Kontakt, und das zuständige Team bekommt eine Nachricht.</p>
+  <div class="stack" aria-label="Eingesetzte Werkzeuge">
+    <span class="chip">n8n</span>
+    <span class="chip">Claude (Anthropic API)</span>
+    <span class="chip">HubSpot CRM</span>
+    <span class="chip">Telegram</span>
+  </div>
+  <p class="meta">Oleksandr Demianenko · Szenario: Inbound-Anfragen für eine Software für Hausverwaltungen</p>
+</header>
+
+<section aria-labelledby="h-hubspot">
+  <h2 id="h-hubspot">Was ich in HubSpot umgesetzt habe</h2>
+  <p class="col lede">HubSpot war für mich neu. Vom ersten Login bis zur laufenden Integration habe ich drei Arbeitstage gebraucht.</p>
+  <div class="grid2">
+    <div>
+      <h3>Datenmodell</h3>
+      <ul class="plain">
+        <li>Acht eigene Kontakteigenschaften in einer eigenen Gruppe „KI &amp; Qualifizierung“, mit passenden Feldtypen (Nummer, Dropdown-Auswahl, ein- und mehrzeiliger Text)</li>
+        <li>Bezeichnung und interner Name bewusst getrennt. Der interne Name ist nach dem Speichern fest, darauf greift die API zu</li>
+        <li>Dropdown-Optionen mit eigenen internen Werten, später um „SEV“ erweitert, ohne die Integration zu brechen</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Oberfläche für den Vertrieb</h3>
+      <ul class="plain">
+        <li>Datensatzseite in der Standardansicht angepasst: eigene Karte „Eigenschaftsliste“ direkt unter dem Namen, nicht genutzte Karten entfernt</li>
+        <li>Kontaktliste mit eigenen Spalten, Schnellfiltern und Sortierung nach Lead-Score</li>
+        <li>Kontostandards gesetzt: Zeitzone Berlin, Währung EUR, deutsches Datumsformat. Das Konto liegt im EU-Rechenzentrum</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Integration</h3>
+      <ul class="plain">
+        <li>Zugriff über einen Service-Schlüssel (Nachfolger der Private Apps) mit minimalen Scopes</li>
+        <li>Kontakte per E-Mail anlegen oder aktualisieren, Lifecycle-Phase „Lead“ wird automatisch gesetzt</li>
+        <li>Notizen über die CRM API v3 mit Zuordnung zum Kontakt, weil die n8n-Node keine Notizen anlegen kann</li>
+        <li>Automatische Firmenanlage über die E-Mail-Domain erkannt: sinnvoll bei B2B-Leads, bei Privatpersonen eine bewusste Entscheidung</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Grenzen des kostenlosen Kontos</h3>
+      <ul class="plain">
+        <li>Workflows und Lead-Rotation gibt es nur in bezahlten Hubs, deshalb läuft die Logik hier in n8n. Mit Sales Hub Pro würde ich prüfen, welcher Teil des Routings nativ in HubSpot laufen kann</li>
+        <li>Das Konto hat nur einen Nutzer, deshalb steht die Zuständigkeit vorerst in einem Team-Feld statt im Kontaktinhaber</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-ergebnis">
+  <h2 id="h-ergebnis">Was die Lösung leistet</h2>
+  <div class="facts">
+    <div class="fact"><b>Qualifiziert</b><span>Einheiten, Verwaltungsart, Software, Segment und Lead-Score aus freiem Text</span></div>
+    <div class="fact"><b>Verteilt</b><span>Segment L oder Score A an Senior Sales, alle anderen an das SDR-Team</span></div>
+    <div class="fact"><b>Filtert</b><span>Spam und Werbung landen nicht im CRM, ein Mensch sieht trotzdem, was verworfen wurde</span></div>
+    <div class="fact"><b>Dokumentiert</b><span>Originalanfrage und KI-Bewertung als Notiz am Kontakt, ohne Dubletten</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-ablauf">
+  <h2 id="h-ablauf">Der Ablauf</h2>
+  <ol class="steps col">
+    <li><div><h3>Anfrage kommt an</h3><p>Das Webformular sendet Name, Firma, E-Mail und Nachricht an einen Webhook. Ohne gültigen API-Key antwortet er mit 403.</p><span class="tool">n8n Webhook · Header-Auth</span></div></li>
+    <li><div><h3>Claude qualifiziert</h3><p>Ein deutscher Prompt liefert ein festes JSON mit sieben Feldern und der Einschätzung, ob es überhaupt ein Lead ist.</p><span class="tool">Claude Haiku 4.5</span></div></li>
+    <li><div><h3>Code prüft die Regeln</h3><p>Die Antwort wird bereinigt und gegen erlaubte Werte geprüft. Das Segment berechnet der Code selbst aus der Zahl der Einheiten.</p><span class="tool">n8n Code-Node „Parse &amp; Route“</span></div></li>
+    <li><div><h3>Relevanz-Filter</h3><p>Keine Hausverwaltung, kein Vermieter, kein Eigentümer: Die Anfrage wird verworfen und nur kurz gemeldet.</p><span class="tool">n8n IF-Node</span></div></li>
+    <li><div><h3>CRM wird befüllt</h3><p>Die E-Mail-Adresse dient als Erkennungsmerkmal. Ist sie noch unbekannt, legt HubSpot einen neuen Kontakt an. Ist sie schon vorhanden, wird der bestehende Kontakt aktualisiert. Dazu acht eigene Eigenschaften und eine Notiz mit dem Originaltext.</p><span class="tool">HubSpot Node · HubSpot API v3 (Notes)</span></div></li>
+    <li><div><h3>Team wird informiert</h3><p>Kurze Zusammenfassung mit Score, Zuständigkeit, nächstem Schritt und Direktlink zum Kontakt.</p><span class="tool">Telegram Bot (austauschbar gegen Slack oder E-Mail)</span></div></li>
+  </ol>
+  <figure>
+    <a href="img/01-workflow.png" target="_blank" rel="noopener"><img src="img/01-workflow.png" alt="n8n-Workflow mit den Knoten Webhook, Claude – Qualifizierung, Parse &amp; Route, Relevant?, HubSpot Contact, HubSpot Notiz, Telegram – Sales-Alert und Telegram – Verworfen" loading="lazy"></a>
+    <figcaption><b>Der Workflow in n8n.</b> Nach der Relevanzprüfung teilt sich der Weg: relevante Leads gehen ins CRM und an das Vertriebsteam, verworfene Anfragen nur als Hinweis an Telegram.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="h-felder">
+  <h2 id="h-felder">Was Claude aus einer Anfrage macht</h2>
+  <p class="col">Beispiel: <i>„Guten Tag, wir verwalten ca. 850 Einheiten (WEG und Miete) in Köln und arbeiten derzeit noch mit Excel und einer alten Domus-Installation. Wir suchen eine moderne Lösung mit Mieterportal und DATEV-Anbindung. Wann wäre eine Demo möglich?“</i></p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Feld</th><th>Ergebnis</th><th>HubSpot-Eigenschaft</th></tr></thead>
+      <tbody>
+        <tr><td>Verwaltete Einheiten</td><td class="mono">850</td><td><code>verwaltete_einheiten</code></td></tr>
+        <tr><td>Verwaltungsart</td><td>WEG + Miete</td><td><code>verwaltungsart</code></td></tr>
+        <tr><td>Aktuelle Software</td><td>Excel, Domus</td><td><code>aktuelle_software</code></td></tr>
+        <tr><td>Segment</td><td>M (300–1.500)</td><td><code>segment</code></td></tr>
+        <tr><td>Lead-Score</td><td><span class="pill a">A</span></td><td><code>leadscore</code></td></tr>
+        <tr><td>Zuständiges Team</td><td>Senior Sales</td><td><code>zustaendiges_team</code></td></tr>
+        <tr><td>KI-Zusammenfassung</td><td>Etablierte Hausverwaltung mit konkretem Bedarf an Mieterportal und DATEV-Anbindung, Demo ausdrücklich gewünscht.</td><td><code>kizusammenfassung</code></td></tr>
+        <tr><td>Nächster Schritt</td><td>Demotermin innerhalb von 24 Stunden anbieten, Schwerpunkt Mieterportal und DATEV.</td><td><code>ki_nachster_schritt</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-regeln">
+  <h2 id="h-regeln">KI für die Bedeutung, Code für die Regeln</h2>
+  <p class="col">Ein Sprachmodell versteht Freitext gut, hält sich aber nicht immer an Formate. In diesem Projekt hat Claude das JSON trotz klarer Anweisung in Markdown verpackt. Deshalb entscheidet die KI nur, was Interpretation braucht. Alles, was eine feste Regel ist, prüft der Code.</p>
+  <figure>
+    <a href="img/02-code.png" target="_blank" rel="noopener"><img src="img/02-code.png" alt="Code-Node Parse &amp; Route: links die Rohantwort von Claude mit Markdown, in der Mitte die Prüfregeln, rechts das bereinigte Ergebnis" loading="lazy"></a>
+    <figcaption><b>Links</b> die Rohantwort von Claude, <b>in der Mitte</b> die Regeln, <b>rechts</b> das geprüfte Ergebnis, das ins CRM geht.</figcaption>
+  </figure>
+  <div class="scale" role="group" aria-label="Segmentgrenzen mit Testanfragen">
+    <div class="band">
+      <h3>S</h3><span class="range">bis 300 Einheiten</span>
+      <div class="lead"><span>Private Vermieterin</span><span class="mono">35</span><span class="route">→ SDR</span></div>
+    </div>
+    <div class="band">
+      <h3>M</h3><span class="range">300 bis 1.500 Einheiten</span>
+      <div class="lead"><span>Weber Mietverwaltung</span><span class="mono">400</span><span class="route">→ SDR</span></div>
+      <div class="lead"><span>Becker Hausverwaltung</span><span class="mono">850</span><span class="route">→ Senior Sales (Score A)</span></div>
+    </div>
+    <div class="band">
+      <h3>L</h3><span class="range">über 1.500 Einheiten</span>
+      <div class="lead"><span>Nord Immobilien</span><span class="mono">2.400</span><span class="route">→ Senior Sales</span></div>
+    </div>
+  </div>
+  <ul class="plain col">
+    <li>Das Segment kommt aus der Zahl der Einheiten, mit denselben Grenzen wie im HubSpot-Dropdown.</li>
+    <li>Score und Verwaltungsart sind nur aus festen Listen erlaubt, die 1:1 den internen Dropdown-Werten in HubSpot entsprechen.</li>
+    <li>Ist die Zahl der Einheiten unbekannt, bleibt das Feld leer. Eine 0 würde jeden Bericht nach Unternehmensgröße verfälschen.</li>
+    <li>Ist die KI unsicher, ob es ein Lead ist, gilt die Anfrage als relevant. Ein Mensch prüft lieber einmal zu viel, als einen Kunden zu verlieren.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="h-crm">
+  <h2 id="h-crm">Im CRM</h2>
+  <figure>
+    <a href="img/03-kontakte.png" target="_blank" rel="noopener"><img src="img/03-kontakte.png" alt="HubSpot-Kontaktliste mit den Spalten Lead-Score, Segment, Zuständiges Team, Verwaltete Einheiten und Unternehmensname" loading="lazy"></a>
+    <figcaption><b>Kontaktliste.</b> Die eigenen Eigenschaften lassen sich als Spalten und Filter nutzen. Der A-Lead steht oben, Zuständigkeit und Größe sind auf einen Blick sichtbar.</figcaption>
+  </figure>
+  <div class="pair">
+    <figure>
+      <a href="img/04-karte.png" target="_blank" rel="noopener"><img src="img/04-karte.png" alt="HubSpot-Kontaktdatensatz von Thomas Becker mit der Karte KI &amp; Qualifizierung und den KI-Kontakteinblicken von HubSpot" loading="lazy"></a>
+      <figcaption><b>Kontaktdatensatz.</b> Die Karte „KI &amp; Qualifizierung“ steht direkt unter dem Namen. In der Mitte greift die HubSpot-eigene KI (Breeze) die Bewertung von Claude auf.</figcaption>
+    </figure>
+    <figure>
+      <a href="img/05-notiz.png" target="_blank" rel="noopener"><img src="img/05-notiz.png" alt="Notiz im Aktivitätenverlauf mit Originalanfrage und KI-Qualifizierung" loading="lazy"></a>
+      <figcaption><b>Notiz im Verlauf.</b> Oben steht der Originaltext des Kunden, darunter die Bewertung. So sieht der Vertrieb immer, was der Kunde geschrieben hat und was die KI daraus abgeleitet hat.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section aria-labelledby="h-alert">
+  <h2 id="h-alert">Benachrichtigung</h2>
+  <div class="pair">
+    <figure>
+      <a href="img/06-telegram.png" target="_blank" rel="noopener"><img src="img/06-telegram.png" alt="Telegram-Nachrichten: Neuer Lead mit Score A und eine verworfene Anfrage einer SEO-Agentur" loading="lazy"></a>
+    </figure>
+    <div class="col" style="display:grid;gap:1rem;align-content:start">
+      <p>Ein Lead mit Score A kommt mit Zuständigkeit, Zusammenfassung, nächstem Schritt und Direktlink zum Kontakt an.</p>
+      <p>Eine verworfene Anfrage erscheint nur als kurzer Hinweis. Sie kostet keinen Platz im CRM, bleibt aber sichtbar. Wenn die KI falsch lag, legt ein Mensch den Kontakt mit einem Klick an.</p>
+      <p class="muted">Telegram ist hier der schnellste Kanal für die Demo. Im Vertrieb wäre das ein Slack-Kanal pro Team oder eine HubSpot-Aufgabe beim zuständigen Owner.</p>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-test">
+  <h2 id="h-test">Getestet mit sechs Anfragen</h2>
+  <p class="col">Jede Testanfrage prüft einen anderen Zweig der Logik.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Anfrage</th><th class="num">Einheiten</th><th>Segment</th><th>Score</th><th>Ergebnis</th></tr></thead>
+      <tbody>
+        <tr><td>Becker Hausverwaltung, Köln, Demo-Wunsch</td><td class="num">850</td><td>M</td><td><span class="pill a">A</span></td><td>Senior Sales</td></tr>
+        <tr><td>Nord Immobilien, Hamburg, nur Marktsichtung</td><td class="num">2.400</td><td>L</td><td><span class="pill b">B</span></td><td>Senior Sales, weil Segment L</td></tr>
+        <tr><td>Weber Mietverwaltung, Düsseldorf, Preisanfrage</td><td class="num">400</td><td>M</td><td><span class="pill b">B</span></td><td>SDR</td></tr>
+        <tr><td>Private Vermieterin mit SEV-Mandaten</td><td class="num">35</td><td>S</td><td><span class="pill b">B</span></td><td>SDR, Verwaltungsart Miete</td></tr>
+        <tr><td>Hausverwaltung Hoffmann, München, ohne Größe</td><td class="num">–</td><td>offen</td><td><span class="pill b">B</span></td><td>SDR, Größe im Erstgespräch klären</td></tr>
+        <tr><td>SEO-Agentur mit Werbeangebot</td><td class="num">–</td><td>–</td><td><span class="pill c">C</span></td><td><span class="pill drop">verworfen</span> kein CRM-Eintrag</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Was beim Aufbau aufgefallen ist und behoben wurde</h3>
+  <p class="col muted">Die Tabelle oben zeigt den Stand nach den Korrekturen. Die ersten Durchläufe hatten drei Fehler.</p>
+  <div class="findings col">
+    <div class="finding">
+      <h3>Falscher Wert im CRM</h3>
+      <p>Im ersten Testlauf nannte Claude die Vermieterin „gemischt“, gespeichert wurde daraus „WEG + Miete“, obwohl sie keine WEG verwaltet. Seitdem gibt der Prompt genau die Dropdown-Werte vor, und HubSpot hat eine eigene Option für SEV.</p>
+    </div>
+    <div class="finding">
+      <h3>Spam als Kontakt</h3>
+      <p>Im ersten Testlauf wurde die SEO-Agentur richtig mit C bewertet, landete aber trotzdem als Kontakt im CRM. Seitdem entscheidet ein eigenes Relevanz-Feld, ob überhaupt ein Kontakt entsteht. Im zweiten Durchlauf wurde die Anfrage verworfen und nicht mehr angelegt.</p>
+    </div>
+    <div class="finding">
+      <h3>„Erfolgreich“ heißt nicht „richtig“</h3>
+      <p>Beim Einrichten der HubSpot-Felder machte ein Leerzeichen vor einem Ausdruck aus dem Segment „ m“ statt „m“. n8n meldete Erfolg, das Dropdown blieb leer. Geprüft wird deshalb immer das gespeicherte Ergebnis, nicht nur der Status.</p>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-betrieb">
+  <h2 id="h-betrieb">Gedacht für den Produktivbetrieb</h2>
+  <div class="grid2">
+    <div><h3>Sicherheit</h3><p>Der Webhook nimmt nur Anfragen mit API-Key im Header an. Tokens und Schlüssel liegen ausschließlich in den Credentials von n8n.</p></div>
+    <div><h3>Datenschutz</h3><p>Das HubSpot-Konto liegt im EU-Rechenzentrum. Die Demo läuft auf meinem Testserver. Produktiv: n8n selbst gehostet in der EU oder n8n Cloud EU, mit AVV und Löschkonzept. Auch die HubSpot-KI verarbeitet Kundendaten und lässt sich bei Bedarf abschalten.</p></div>
+    <div><h3>Keine Dubletten</h3><p>Die E-Mail-Adresse dient als Schlüssel. Gibt es den Kontakt schon, wird er aktualisiert statt neu angelegt. Schreibt ein Kunde zweimal, wächst der Verlauf, nicht die Datenbank.</p></div>
+    <div><h3>Mensch im Prozess</h3><p>Die KI bewertet und schlägt vor. Verworfene Anfragen bleiben sichtbar, und den nächsten Schritt entscheidet der Vertrieb.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-next">
+  <h2 id="h-next">Nächste Ausbaustufen</h2>
+  <ul class="plain col">
+    <li>Owner-Zuweisung an echte Vertriebsmitarbeiter statt Team-Feld (Round-Robin innerhalb des Teams)</li>
+    <li>Leadstatus „Neu“ und automatischer Deal für A-Leads</li>
+    <li>Aufgabe mit Fälligkeit für den nächsten Schritt, damit kein A-Lead liegen bleibt</li>
+    <li>Monitoring: Alarm, wenn der Workflow ausfällt oder ungewöhnlich wenige Anfragen verarbeitet</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Oleksandr Demianenko · Automatisierung mit n8n, KI und CRM</p>
+  <p>Gebaut im November 2026. Alle Kontakte in den Screenshots sind erfundene Testdaten.</p>
+</footer>
+
+</div>
+</body>
+</html>
